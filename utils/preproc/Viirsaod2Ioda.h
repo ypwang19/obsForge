@@ -61,6 +61,26 @@ namespace obsforge {
       ncFile.getVar("AOD550").getVar(aod550);
       const float missingValue = -999.999;
 
+      float aod550_bias_pred[dimRow][dimCol];
+      bool hasAod550BiasPred = false;
+      try {
+        ncFile.getVar("AOD550_bias_pred").getVar(aod550_bias_pred);
+        hasAod550BiasPred = true;
+      } catch (const NcException &) {
+        oops::Log::warning() << "AOD550_bias_pred missing in file " << fileName
+                            << "; using fallback bias estimate." << std::endl;
+      }
+
+      float aod550_uncertainty[dimRow][dimCol];
+      bool hasAod550Uncertainty = false;
+      try {
+        ncFile.getVar("AOD550_uncertainty").getVar(aod550_uncertainty);
+        hasAod550Uncertainty = true;
+      } catch (const NcException &) {
+        oops::Log::warning() << "AOD550_uncertainty missing in file " << fileName
+                            << "; using fallback uncertainty estimate." << std::endl;
+      }
+
       int8_t qcall[dimRow][dimCol];
       ncFile.getVar("QCAll").getVar(qcall);
 
@@ -120,25 +140,43 @@ namespace obsforge {
                 preqc[i][j] = static_cast<int>(qcall[i][j]);
                 lat[i][j] = lat2d[i][j];
                 lon[i][j] = lon2d[i][j];
-                // dark land (Huang et al. JAMES 2023)
+
+                // Prefer the raw bias and uncertainty from the file when available.
                 float obserrorValue = 0.111431 + 0.128699 * static_cast<float>(aod550[i][j]);
-                // Innovation-based diagnostic (Desroziers et al, 2005)
-                // float obserrorValue2 = -0.127 + 0.547 * static_cast<float>(aod550[i][j]);
                 float obsBiasValue = -0.014 + 0.158 * static_cast<float>(aod550[i][j]);
+                if (hasAod550Uncertainty && std::isfinite(aod550_uncertainty[i][j]) &&
+                    aod550_uncertainty[i][j] != missingValue) {
+                  obserrorValue = aod550_uncertainty[i][j];
+                }
+                if (hasAod550BiasPred && std::isfinite(aod550_bias_pred[i][j]) &&
+                    aod550_bias_pred[i][j] != missingValue) {
+                  obsBiasValue = aod550_bias_pred[i][j];
+                }
+
                 pathflag[i][j] = static_cast<float>(1);   // dark land flag: 1
 
                 // ocean
                 if (qcpath[i][j] % 2 == 1) {
-                    obserrorValue = 0.00784394 + 0.219923 * static_cast<float>(aod550[i][j]);
-                    // obserrorValue2 = -0.069 + 0.483 * static_cast<float>(aod550[i][j]);
-                    obsBiasValue = -0.015 + 0.077 * static_cast<float>(aod550[i][j]);
+                    if (!(hasAod550Uncertainty && std::isfinite(aod550_uncertainty[i][j]) &&
+                          aod550_uncertainty[i][j] != missingValue)) {
+                      obserrorValue = 0.00784394 + 0.219923 * static_cast<float>(aod550[i][j]);
+                    }
+                    if (!(hasAod550BiasPred && std::isfinite(aod550_bias_pred[i][j]) &&
+                          aod550_bias_pred[i][j] != missingValue)) {
+                      obsBiasValue = -0.015 + 0.077 * static_cast<float>(aod550[i][j]);
+                    }
                     pathflag[i][j] = static_cast<float>(0);  // ocean/water flag: 0
                 }
                 // bright land
                 if (qcpath[i][j] % 4 == 2) {
-                   obserrorValue = 0.0550472 + 0.299558 *  static_cast<float>(aod550[i][j]);
-                   // obserrorValue2 = -0.101 + 0.644 *  static_cast<float>(aod550[i][j]);
-                   obsBiasValue = -0.011 + 0.150 * static_cast<float>(aod550[i][j]);
+                   if (!(hasAod550Uncertainty && std::isfinite(aod550_uncertainty[i][j]) &&
+                         aod550_uncertainty[i][j] != missingValue)) {
+                     obserrorValue = 0.0550472 + 0.299558 *  static_cast<float>(aod550[i][j]);
+                   }
+                   if (!(hasAod550BiasPred && std::isfinite(aod550_bias_pred[i][j]) &&
+                         aod550_bias_pred[i][j] != missingValue)) {
+                     obsBiasValue = -0.011 + 0.150 * static_cast<float>(aod550[i][j]);
+                   }
                    pathflag[i][j] = static_cast<float>(2);  // bright land flag: 2
                 }
                 obserror[i][j] = obserrorValue;
